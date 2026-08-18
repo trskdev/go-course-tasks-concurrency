@@ -30,6 +30,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -49,14 +50,40 @@ func process(in <-chan int) <-chan int {
 // TODO: реализуй fanOut — раздай задачи n воркерам
 func fanOut(in <-chan int, n int) []<-chan int {
 	channels := make([]<-chan int, n)
-	// TODO
+	for i := range n {
+		ch := make(chan int)
+		channels[i] = ch
+
+		go func(out chan<- int) {
+			defer close(out)
+			for num := range in {
+				out <- num
+			}
+		}(ch)
+	}
 	return channels
 }
 
 // TODO: реализуй fanIn — слей все каналы в один
 func fanIn(channels ...<-chan int) <-chan int {
 	out := make(chan int)
-	// TODO
+	var wg sync.WaitGroup
+
+	for _, ch := range channels {
+		wg.Add(1)
+		go func(ch <-chan int) {
+			defer wg.Done()
+			for num := range ch {
+				out <- num
+			}
+		}(ch)
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
 	return out
 }
 

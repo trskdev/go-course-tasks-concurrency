@@ -35,6 +35,16 @@ type Result struct {
 	Body string
 }
 
+type resultResponse struct {
+	result Result
+	err    error
+}
+
+type stringResponse struct {
+	result string
+	err    error
+}
+
 // mockFetch имитирует HTTP-запрос с случайной задержкой
 func mockFetch(ctx context.Context, url string) (Result, error) {
 	delay := time.Duration(50+rand.Intn(200)) * time.Millisecond
@@ -54,13 +64,57 @@ func mockFetch(ctx context.Context, url string) (Result, error) {
 // Подсказка: отмена ctx распространяется на все запросы автоматически — не заботься об явном завершении
 func fastest(ctx context.Context, urls []string) (Result, error) {
 	// TODO: реализуй
-	return Result{}, errors.New("TODO: реализуй")
+	size := len(urls)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	resChan := make(chan resultResponse, size)
+	errCount := 0
+
+	for _, url := range urls {
+		go func(url string) {
+			res, err := mockFetch(cancelCtx, url)
+			resp := resultResponse{result: res, err: err}
+
+			resChan <- resp
+		}(url)
+	}
+
+	for {
+		select {
+		case res := <-resChan:
+			if res.err == nil {
+				return res.result, nil
+			}
+
+			errCount++
+			if errCount == size {
+				return Result{}, ErrAllFailed
+			}
+		case <-ctx.Done():
+			return Result{}, ErrTimeout
+		}
+	}
 }
 
 // TODO: реализуй withTimeout
 func withTimeout(d time.Duration, fn func() (string, error)) (string, error) {
 	// TODO
-	return "", errors.New("TODO: реализуй")
+	ch := make(chan stringResponse, 1)
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	go func() {
+		result, err := fn()
+		ch <- stringResponse{result: result, err: err}
+	}()
+
+	select {
+	case <-timer.C:
+		return "", ErrTimeout
+	case res := <-ch:
+		return res.result, res.err
+	}
 }
 
 func main() {

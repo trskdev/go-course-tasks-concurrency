@@ -20,9 +20,9 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // === Версия A: НЕПРАВИЛЬНАЯ — гонка ===
@@ -58,8 +58,10 @@ var (
 
 // TODO: реализуй GetDB_Once
 func GetDB_Once() *MockDB {
-	// TODO
-	return nil
+	onceDB.Do(func() {
+		singleDB = NewMockDB()
+	})
+	return singleDB
 }
 
 // === Задача 3: Once с обработкой ошибки ===
@@ -69,22 +71,34 @@ func GetDB_Once() *MockDB {
 // Если fn успешна — все последующие вызовы возвращают кешированный результат.
 type OnceWithError struct {
 	mu   sync.Mutex
-	done bool
+	done atomic.Bool
 	val  any
 	err  error
 }
 
 // TODO: реализуй Do
 func (o *OnceWithError) Do(fn func() (any, error)) (any, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	if o.done {
+	if o.done.Load() {
 		return o.val, o.err
 	}
 
-	// TODO: вызови fn(), сохрани результат; done = true только при успехе
-	return nil, errors.New("TODO: реализуй")
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if !o.done.Load() {
+		val, err := fn()
+
+		if err != nil {
+			return val, err
+		}
+
+		o.val = val
+		o.err = err
+
+		o.done.Store(true)
+	}
+
+	return o.val, o.err
 }
 
 // === Вспомогательный мок ===

@@ -36,14 +36,48 @@ import (
 	"time"
 )
 
+type task[I, O any] struct {
+	val   I
+	resCh chan O
+}
+
 // TODO: реализуй OrderedMap
 // Подсказка: параллельно запусти workers горутин; каждой задаче нужен способ
 // дождаться своей очереди на выход. Подумай про промежуточный канал per-job
 // (канал-заглушку, который закроется когда результат готов).
 func OrderedMap[I, O any](in <-chan I, workers int, fn func(I) O) <-chan O {
 	out := make(chan O)
-	// TODO
-	_ = workers
+	queue := make(chan chan O, workers)
+	taskCh := make(chan task[I, O])
+
+	go func() {
+		defer close(queue)
+		defer close(taskCh)
+		for val := range in {
+			resCh := make(chan O, 1)
+			queue <- resCh
+			taskCh <- task[I, O]{val: val, resCh: resCh}
+		}
+	}()
+
+	for range workers {
+		go func() {
+			for t := range taskCh {
+				res := fn(t.val)
+				t.resCh <- res
+				close(t.resCh)
+			}
+		}()
+	}
+
+	go func() {
+		defer close(out)
+
+		for resCh := range queue {
+			out <- <-resCh
+		}
+	}()
+
 	return out
 }
 

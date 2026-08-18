@@ -25,6 +25,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"sync"
 )
 
 // TODO: реализуй merge2
@@ -32,10 +33,25 @@ import (
 // но select всё равно может выбрать закрытый (он отдаёт zero-value) — подумай как его исключить
 func merge2(a, b <-chan int) <-chan int {
 	out := make(chan int)
+
+	var wg sync.WaitGroup
+
+	merger := func(ch <-chan int) {
+		defer wg.Done()
+		for num := range ch {
+			out <- num
+		}
+	}
+
+	wg.Add(2)
+	go merger(a)
+	go merger(b)
+
 	go func() {
-		defer close(out)
-		// TODO
+		wg.Wait()
+		close(out)
 	}()
+
 	return out
 }
 
@@ -44,7 +60,26 @@ func merge2(a, b <-chan int) <-chan int {
 // понять когда все каналы иссякли — только после этого можно закрыть out
 func mergeN(channels ...<-chan int) <-chan int {
 	out := make(chan int)
-	// TODO
+
+	var wg sync.WaitGroup
+
+	merger := func(ch <-chan int) {
+		defer wg.Done()
+		for num := range ch {
+			out <- num
+		}
+	}
+
+	wg.Add(len(channels))
+	for _, ch := range channels {
+		go merger(ch)
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
 	return out
 }
 
@@ -52,8 +87,7 @@ func mergeN(channels ...<-chan int) <-chan int {
 // Подсказка: достаточно ли уже готового mergeN, или нужно что-то ещё?
 // Подумай: если горутина читает из канала последовательно — может ли она нарушить порядок?
 func mergeOrdered(channels ...<-chan int) <-chan int {
-	// TODO
-	return nil
+	return mergeN(channels...)
 }
 
 func sourceChan(nums ...int) <-chan int {

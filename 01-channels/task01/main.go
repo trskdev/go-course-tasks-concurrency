@@ -32,7 +32,9 @@ func generate(nums ...int) <-chan int {
 	out := make(chan int)
 	go func() {
 		defer close(out)
-		// TODO: отправь каждое число в out
+		for _, num := range nums {
+			out <- num
+		}
 	}()
 	return out
 }
@@ -42,7 +44,9 @@ func square(in <-chan int) <-chan int {
 	out := make(chan int)
 	go func() {
 		defer close(out)
-		// TODO: читай из in, отправляй n*n в out
+		for num := range in {
+			out <- num * num
+		}
 	}()
 	return out
 }
@@ -52,7 +56,11 @@ func filterEven(in <-chan int) <-chan int {
 	out := make(chan int)
 	go func() {
 		defer close(out)
-		// TODO: пропускай только n%2 == 0
+		for num := range in {
+			if num%2 == 0 {
+				out <- num
+			}
+		}
 	}()
 	return out
 }
