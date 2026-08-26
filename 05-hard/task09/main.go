@@ -40,6 +40,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -54,8 +55,55 @@ func ParallelForEach[T any](
 	parallelism int,
 	fn func(ctx context.Context, item T) error,
 ) error {
-	// TODO
-	return nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	ctxCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, parallelism)
+	var wg sync.WaitGroup
+
+	var errOnce sync.Once
+	var firstErr error
+
+	setErr := func(err error) {
+		errOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+
+	for _, item := range items {
+		aborted := false
+		select {
+		case sem <- struct{}{}:
+		case <-ctxCancel.Done():
+			aborted = true
+		}
+		if aborted {
+			break
+		}
+
+		wg.Add(1)
+		go func(val T) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			if err := fn(ctxCancel, val); err != nil {
+				setErr(err)
+			}
+		}(item)
+	}
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	return ctx.Err()
 }
 
 // TODO: реализуй ParallelMap (бонус)
@@ -65,8 +113,65 @@ func ParallelMap[I, O any](
 	parallelism int,
 	fn func(ctx context.Context, item I) (O, error),
 ) ([]O, error) {
-	// TODO
-	return nil, nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	ctxCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, parallelism)
+	var wg sync.WaitGroup
+
+	type result struct {
+		value O
+		err   error
+	}
+
+	var errOnce sync.Once
+	var firstErr error
+	results := make([]O, len(items))
+
+	setErr := func(err error) {
+		errOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+
+	for i, item := range items {
+		aborted := false
+		select {
+		case sem <- struct{}{}:
+		case <-ctxCancel.Done():
+			aborted = true
+		}
+		if aborted {
+			break
+		}
+
+		wg.Add(1)
+		go func(id int, val I) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			res, err := fn(ctxCancel, val)
+			if err != nil {
+				setErr(err)
+				return
+			}
+
+			results[id] = res
+		}(i, item)
+	}
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return results, nil
 }
 
 func main() {

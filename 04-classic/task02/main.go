@@ -26,6 +26,8 @@ package main
 import (
 	"fmt"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -34,7 +36,68 @@ import (
 // TODO: реализуй producerConsumerChan
 // Подсказка: два буферизованных канала и два WaitGroup — для производителей и потребителей
 func producerConsumerChan(producers, consumers, n, bufSize int) []int {
-	return nil
+	prodChan := make(chan int, bufSize)
+	consChan := make(chan int, bufSize)
+	res := []int{}
+
+	var nCounter atomic.Int64
+
+	var prodWg sync.WaitGroup
+	var consWg sync.WaitGroup
+	var resWg sync.WaitGroup
+
+	for range producers {
+		prodWg.Add(1)
+
+		go func() {
+			defer prodWg.Done()
+
+			for {
+				// start with 0, so skipping doesn't bother us
+				next := nCounter.Add(1)
+				cur := next - 1
+				if cur > int64(n) {
+					return
+				}
+
+				prodChan <- int(cur)
+			}
+		}()
+	}
+
+	go func() {
+		prodWg.Wait()
+		close(prodChan)
+	}()
+
+	for range consumers {
+		consWg.Add(1)
+
+		go func() {
+			defer consWg.Done()
+
+			for i := range prodChan {
+				consChan <- i * i
+			}
+		}()
+	}
+
+	resWg.Add(1)
+	go func() {
+		defer resWg.Done()
+		for i := range consChan {
+			res = append(res, i)
+		}
+	}()
+
+	go func() {
+		consWg.Wait()
+		close(consChan)
+	}()
+
+	resWg.Wait()
+
+	return res
 }
 
 func TestProducerConsumer(t *testing.T) {
@@ -59,7 +122,83 @@ func TestProducerConsumer(t *testing.T) {
 // TODO: реализуй producerConsumerCond
 // Подсказка: буфер — обычный срез; производители ждут пока буфер полон, потребители — пока пуст
 func producerConsumerCond(producers, consumers, n, bufSize int) []int {
-	return nil
+	var mu sync.Mutex
+	cond := sync.NewCond(&mu)
+
+	buffer := make([]int, 0, bufSize)
+	res := []int{}
+
+	var prodWg sync.WaitGroup
+	var consWg sync.WaitGroup
+	var nCounter atomic.Int64
+
+	producersDone := false
+
+	for range producers {
+		prodWg.Add(1)
+		go func() {
+			defer prodWg.Done()
+
+			for {
+				next := nCounter.Add(1)
+				cur := next - 1
+				if cur > int64(n) {
+					return
+				}
+
+				mu.Lock()
+				for len(buffer) == bufSize {
+					cond.Wait()
+				}
+
+				buffer = append(buffer, int(cur))
+
+				cond.Broadcast()
+				mu.Unlock()
+			}
+		}()
+	}
+
+	go func() {
+		prodWg.Wait()
+		mu.Lock()
+		producersDone = true
+		cond.Broadcast()
+		mu.Unlock()
+	}()
+
+	for range consumers {
+		consWg.Add(1)
+		go func() {
+			defer consWg.Done()
+			for {
+				mu.Lock()
+				for len(buffer) == 0 && !producersDone {
+					cond.Wait()
+				}
+
+				for len(buffer) == 0 && producersDone {
+					mu.Unlock()
+					return
+				}
+
+				val := buffer[0]
+				buffer = buffer[1:]
+
+				cond.Broadcast()
+				mu.Unlock()
+
+				squared := val * val
+
+				mu.Lock()
+				res = append(res, squared)
+				mu.Unlock()
+			}
+		}()
+	}
+
+	consWg.Wait()
+	return res
 }
 
 func TestProducerConsumerCond(t *testing.T) {

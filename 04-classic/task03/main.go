@@ -42,17 +42,21 @@ func NewOrderedPrinterChan() *OrderedPrinterChan {
 
 // TODO: реализуй First — вызови fn и сигнализируй что можно запускать Second
 func (p *OrderedPrinterChan) First(fn func()) {
-	// TODO
+	fn()
+	close(p.after1)
 }
 
 // TODO: реализуй Second — дождись сигнала от First, вызови fn, сигнализируй Third
 func (p *OrderedPrinterChan) Second(fn func()) {
-	// TODO
+	<-p.after1
+	fn()
+	close(p.after2)
 }
 
 // TODO: реализуй Third — дождись сигнала от Second и вызови fn
 func (p *OrderedPrinterChan) Third(fn func()) {
-	// TODO
+	<-p.after2
+	fn()
 }
 
 // === Вариант B: через WaitGroup ===
@@ -71,13 +75,17 @@ func NewOrderedPrinterWG() *OrderedPrinterWG {
 
 // TODO: реализуй First, Second, Third через WaitGroup
 func (p *OrderedPrinterWG) First(fn func()) {
-	// TODO
+	fn()
+	p.wg1.Done()
 }
 func (p *OrderedPrinterWG) Second(fn func()) {
-	// TODO
+	p.wg1.Wait()
+	fn()
+	p.wg2.Done()
 }
 func (p *OrderedPrinterWG) Third(fn func()) {
-	// TODO
+	p.wg2.Wait()
+	fn()
 }
 
 // === Вариант C: через atomic ===
@@ -88,13 +96,21 @@ type OrderedPrinterAtomic struct {
 
 // TODO: реализуй через spin-ожидание atomic
 func (p *OrderedPrinterAtomic) First(fn func()) {
-	// TODO
+	fn()
+	p.state.Store(1)
 }
 func (p *OrderedPrinterAtomic) Second(fn func()) {
-	// TODO
+	for p.state.Load() != 1 {
+	}
+
+	fn()
+	p.state.Store(2)
 }
 func (p *OrderedPrinterAtomic) Third(fn func()) {
-	// TODO
+	for p.state.Load() != 2 {
+	}
+
+	fn()
 }
 
 // === Тесты ===

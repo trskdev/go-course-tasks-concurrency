@@ -64,12 +64,21 @@ func (c *TTLCache[K, V]) Set(key K, value V) {
 // Подсказка: Get в основном читает — подумай какой Lock подойдёт
 // Отдельный вопрос: что делать если нашли устаревшую запись? Можно ли её удалить здесь?
 func (c *TTLCache[K, V]) Get(key K) (val V, ok bool) {
+	c.mu.RLock()
+	value, ok := c.items[key]
+	if ok && time.Now().Before(value.expiry) {
+		defer c.mu.RUnlock()
+		return value.value, ok
+	}
+	c.mu.RUnlock()
+
+	if !ok {
+		return val, false
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// at the first i used RLock but decided to add deletion on expired ttl, so had to switch to Lock
-
-	value, ok := c.items[key]
+	value, ok = c.items[key]
 	if !ok || value.expiry.Before(time.Now()) {
 		delete(c.items, key)
 		return val, false

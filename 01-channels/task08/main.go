@@ -26,6 +26,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -36,8 +37,99 @@ import (
 func Tee[T any](done <-chan struct{}, in <-chan T) (<-chan T, <-chan T) {
 	out1 := make(chan T)
 	out2 := make(chan T)
-	// TODO
+
+	go func() {
+		defer close(out1)
+		defer close(out2)
+
+		for {
+			select {
+			case <-done:
+				return
+			case item, ok := <-in:
+				if !ok {
+					return
+				}
+
+				ch1, ch2 := out1, out2
+
+				for ch1 != nil || ch2 != nil {
+					select {
+					case ch1 <- item:
+						ch1 = nil
+					case ch2 <- item:
+						ch2 = nil
+					case <-done:
+						return
+					}
+				}
+			}
+		}
+	}()
+
 	return out1, out2
+}
+
+func TeeN[T any](done <-chan struct{}, in <-chan T, n int) []<-chan T {
+	if n <= 0 {
+		return nil
+	}
+
+	outputs := make([]chan T, n)
+	result := make([]<-chan T, n)
+	for i := 0; i < n; i++ {
+		ch := make(chan T)
+		outputs[i] = ch
+		result[i] = ch
+	}
+
+	go func() {
+		defer func() {
+			for _, ch := range outputs {
+				close(ch)
+			}
+		}()
+
+		for {
+			select {
+			case <-done:
+				return
+			case item, ok := <-in:
+				if !ok {
+					return
+				}
+
+				cases := make([]reflect.SelectCase, n+1)
+				cases[0] = reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(done),
+				}
+
+				for i, ch := range outputs {
+					cases[i+1] = reflect.SelectCase{
+						Dir:  reflect.SelectSend,
+						Chan: reflect.ValueOf(ch),
+						Send: reflect.ValueOf(item),
+					}
+				}
+
+				remaining := n
+
+				for remaining > 0 {
+					chosen, _, _ := reflect.Select(cases)
+
+					if chosen == 0 {
+						return
+					}
+
+					cases[chosen].Dir = reflect.SelectDefault
+					remaining--
+				}
+			}
+		}
+	}()
+
+	return result
 }
 
 func main() {
