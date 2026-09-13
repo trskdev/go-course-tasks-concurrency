@@ -56,7 +56,7 @@ func producerConsumerChan(producers, consumers, n, bufSize int) []int {
 				// start with 0, so skipping doesn't bother us
 				next := nCounter.Add(1)
 				cur := next - 1
-				if cur > int64(n) {
+				if cur >= int64(n) {
 					return
 				}
 
@@ -142,7 +142,7 @@ func producerConsumerCond(producers, consumers, n, bufSize int) []int {
 			for {
 				next := nCounter.Add(1)
 				cur := next - 1
-				if cur > int64(n) {
+				if cur >= int64(n) {
 					return
 				}
 

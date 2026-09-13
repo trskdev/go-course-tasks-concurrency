@@ -122,7 +122,7 @@ func TeeN[T any](done <-chan struct{}, in <-chan T, n int) []<-chan T {
 						return
 					}
 
-					cases[chosen].Dir = reflect.SelectDefault
+					cases[chosen].Chan = reflect.Value{}
 					remaining--
 				}
 			}
