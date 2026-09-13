@@ -55,8 +55,8 @@ func OrderedMap[I, O any](in <-chan I, workers int, fn func(I) O) <-chan O {
 		defer close(taskCh)
 		for val := range in {
 			resCh := make(chan O, 1)
-			queue <- resCh
 			taskCh <- task[I, O]{val: val, resCh: resCh}
+			queue <- resCh
 		}
 	}()
 

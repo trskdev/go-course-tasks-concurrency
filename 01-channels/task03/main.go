@@ -82,11 +82,20 @@ func square(done <-chan struct{}, in <-chan int) <-chan int {
 	go func() {
 		defer close(out)
 		// TODO: аналогично generate, но читаем из канала, а не из среза
-		for n := range in {
+		for {
 			select {
 			case <-done:
 				return
-			case out <- n * n:
+			case n, ok := <-in:
+				if !ok {
+					return
+				}
+
+				select {
+				case <-done:
+					return
+				case out <- n * n:
+				}
 			}
 		}
 	}()
