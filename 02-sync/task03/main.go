@@ -65,30 +65,31 @@ func (s *Semaphore) AcquireContext(ctx context.Context, n int) error {
 	}
 
 	s.mu.Lock()
-	if s.available >= n {
-		s.available -= n
-		s.mu.Unlock()
-		return nil
-	}
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	acquired := make(chan any)
+	done := make(chan struct{})
 
 	go func() {
-		s.Acquire(n)
-		close(acquired)
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.cond.Broadcast()
+			s.mu.Unlock()
+		case <-done:
+		}
 	}()
 
-	select {
-	case <-ctx.Done():
-		go func() {
-			<-acquired
-			s.Release(n)
-		}()
-		return ctx.Err()
-	case <-acquired:
-		return nil
+	for s.available < n && ctx.Err() == nil {
+		s.cond.Wait()
 	}
+
+	if err := ctx.Err(); err != nil {
+		close(done)
+		return err
+	}
+	s.available -= n
+	close(done)
+	return nil
 }
 
 // TryAcquire non-blocking захват. Возвращает false если доступно < n.

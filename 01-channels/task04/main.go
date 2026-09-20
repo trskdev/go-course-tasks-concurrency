@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -65,14 +66,23 @@ func mockFetch(ctx context.Context, url string) (Result, error) {
 func fastest(ctx context.Context, urls []string) (Result, error) {
 	// TODO: реализуй
 	size := len(urls)
+	if size <= 0 {
+		return Result{}, nil
+	}
+
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	resChan := make(chan resultResponse, size)
-	errCount := 0
+
+	var wg sync.WaitGroup
 
 	for _, url := range urls {
+		wg.Add(1)
+
 		go func(url string) {
+			defer wg.Done()
+
 			res, err := mockFetch(cancelCtx, url)
 			resp := resultResponse{result: res, err: err}
 
@@ -80,19 +90,23 @@ func fastest(ctx context.Context, urls []string) (Result, error) {
 		}(url)
 	}
 
+	go func() {
+		wg.Wait()
+		close(resChan)
+	}()
+
 	for {
 		select {
-		case res := <-resChan:
+		case res, ok := <-resChan:
+			if !ok {
+				return Result{}, ErrAllFailed
+			}
+
 			if res.err == nil {
 				return res.result, nil
 			}
-
-			errCount++
-			if errCount == size {
-				return Result{}, ErrAllFailed
-			}
 		case <-ctx.Done():
-			return Result{}, ErrTimeout
+			return Result{}, ctx.Err()
 		}
 	}
 }
